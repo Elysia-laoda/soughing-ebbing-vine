@@ -1,0 +1,47 @@
+# ===== Unity 生成目录（本地缓存，全部可重建，绝不提交） =====
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]serSettings/
+MemoryCaptures/
+[Ee]xport/
+
+# ===== IDE / 工程文件（由 Unity 自动重新生成） =====
+*.csproj
+*.sln
+*.user
+*.userprefs
+*.unityproj
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+.vs/
+.vscode/
+.idea/
+.ionide/
+
+# ===== 构建产物 =====
+*.apk
+*.aab
+*.unitypackage
+
+# ===== 系统文件 =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== 本地个人配置 =====
+*.local
+
+# ===== Codely AI 工具（非游戏内容） =====
+.codely-cli/
+.codelyignore
+.com-unity-codely.json
+.vsconfig
