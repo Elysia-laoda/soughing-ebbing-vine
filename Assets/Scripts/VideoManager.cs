@@ -44,7 +44,9 @@ public class VideoManager : MonoBehaviour
 
     private RenderTexture CreateRenderTexture()
     {
-        RenderTexture rt = new RenderTexture(Screen.width, Screen.height, 0);
+        // 视频按 16:9 渲染：信箱视口恒为 16:9，用固定 1920×1080
+        // （按 Screen 尺寸建会在手机宽屏下把 16:9 视频拉成 20:9 再压回信箱，出现挤压变形）
+        RenderTexture rt = new RenderTexture(1920, 1080, 0);
         rt.Create();
         return rt;
     }

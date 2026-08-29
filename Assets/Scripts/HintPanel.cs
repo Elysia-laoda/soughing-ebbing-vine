@@ -30,7 +30,7 @@ public class HintPanel : MonoBehaviour
         if (PlayerPrefs.GetInt(prefKey, 0) != 0) return;   // 这个场景看过了，不再弹
 #endif
         if (canvasRoot == null) return;
-        Transform t = canvasRoot.Find(panelName);
+        Transform t = FindRecursive(canvasRoot, panelName);
         if (t == null)
         {
             Debug.LogWarning("HintPanel：场景里没有 " + panelName + "，跳过提示");
@@ -144,5 +144,19 @@ public class HintPanel : MonoBehaviour
             PlayerPrefs.Save();
         }
     }
+    /// <summary>
+    /// 递归查找：提示面板可能被 AspectLetterbox 的 16:9 信箱容器收纳，
+    /// 不再是 Canvas 的直接子物体，顶层 Find 会找不到。
+    /// </summary>
+    private static Transform FindRecursive(Transform root, string name)
+    {
+        if (root == null) return null;
+        if (root.name == name) return root;
+        for (int i = 0; i < root.childCount; i++)
+        {
+            Transform t = FindRecursive(root.GetChild(i), name);
+            if (t != null) return t;
+        }
+        return null;
+    }
 }
-

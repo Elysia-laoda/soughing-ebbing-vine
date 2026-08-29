@@ -23,6 +23,8 @@ using UnityEngine.UI;
 public class TimeMapManager : MonoBehaviour
 {
     public static TimeMapManager Instance { get; private set; }
+    /// <summary>背景图 Resources 路径（不含扩展名），运行时加载挂到最底层，避免场景精灵引用在构建中失效</summary>
+    public string backgroundSpritePath = "Sprites/BG/MapBG";
 
     // ============ 数据 ============
     private TimeMapData data;
@@ -112,14 +114,69 @@ public class TimeMapManager : MonoBehaviour
     }
 
     // ============ 场景对象装配 ============
-
+    /// <summary>递归查找 UI 对象（画布直挂的 UI 可能被信箱容器收纳，顶层 Find 会找不到）</summary>
+    private static Transform FindUI(Transform root, string name)
+    {
+        if (root == null) return null;
+        if (root.name == name) return root;
+        for (int i = 0; i < root.childCount; i++)
+        {
+            Transform t = FindUI(root.GetChild(i), name);
+            if (t != null) return t;
+        }
+        return null;
+    }
     private void SetupBackground()
     {
         // 背景纯装饰：整个子树关掉射线检测，让点击穿透到拖拽层
-        Transform bg = canvas.transform.Find("Img_BaseWhite");
+        Transform bg = FindUI(canvas.transform, "Img_BaseWhite");
         if (bg != null) DisableRaycastRecursive(bg);
+        EnsureRuntimeBackground();
     }
+    /// <summary>
+    /// 背景兜底：场景里背景精灵的引用在工程迁移（团结引擎 meta 用 base64 guid、场景用十六进制
+    /// guid）后可能在构建里失效——编辑器里看正常、打包后不显示。这里直接从 Resources 加载一张
+    /// 全屏背景挂到 UI 最底层，保证构建里背景一定存在。
+    /// 想换背景：改 backgroundSpritePath（Resources 路径，不含扩展名），或直接换这张图。
+    /// </summary>
+    private void EnsureRuntimeBackground()
+    {
+        if (string.IsNullOrEmpty(backgroundSpritePath)) return;
+        Sprite sp = Resources.Load<Sprite>(backgroundSpritePath);
+        if (sp == null)
+        {
+            // 兜底：图片可能被导入成普通纹理（textureType 非 Sprite），转 Texture2D 手动建 Sprite
+            Texture2D tex = Resources.Load<Texture2D>(backgroundSpritePath);
+            if (tex != null)
+            {
+                sp = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f), 100f);
+                Debug.Log("TimeMapManager：背景图按纹理兜底加载成功 " + backgroundSpritePath);
+            }
+        }
+        if (sp == null)
+        {
+            Debug.LogError("TimeMapManager：背景图加载失败 Resources/" + backgroundSpritePath
+                + "（文件不存在，或没在 Resources 目录，或没导入成精灵）");
+            return;
+        }
+        Debug.Log("TimeMapManager：背景图加载成功 " + backgroundSpritePath + " -> " + sp.name);
+        Transform container = FindUI(canvas.transform, "__UIContainer");
+        Transform parent = container != null ? container : canvas.transform;
 
+        GameObject go = new GameObject("RuntimeBackground");
+        go.transform.SetParent(parent, false);
+        go.transform.SetSiblingIndex(0);   // 最底层，盖在所有 UI 后面
+        Image img = go.AddComponent<Image>();
+        img.sprite = sp;
+        img.color = Color.white;
+        img.raycastTarget = false;   // 关键：全屏背景不拦点击，否则拖拽/点节点全被它吃掉
+        RectTransform rt = go.GetComponent<RectTransform>();
+        rt.anchorMin = Vector2.zero;
+        rt.anchorMax = Vector2.one;
+        rt.offsetMin = Vector2.zero;
+        rt.offsetMax = Vector2.zero;
+        Debug.Log("TimeMapManager：RuntimeBackground 已创建，父级=" + parent.name);
+    }
     private static void DisableRaycastRecursive(Transform t)
     {
         Image img = t.GetComponent<Image>();
@@ -132,7 +189,7 @@ public class TimeMapManager : MonoBehaviour
 
     private void SetupMapRoot()
     {
-        Transform root = canvas.transform.Find("MapRoot");
+        Transform root = FindUI(canvas.transform, "MapRoot");
         if (root == null)
         {
             Debug.LogError("TimeMapManager：场景里没有 MapRoot");
@@ -165,7 +222,7 @@ public class TimeMapManager : MonoBehaviour
 
     private void SetupDetailPanel()
     {
-        Transform panel = canvas.transform.Find("Panel_Detail");
+        Transform panel = FindUI(canvas.transform, "Panel_Detail");
         if (panel == null)
         {
             Debug.LogError("TimeMapManager：场景里没有 Panel_Detail");
@@ -185,7 +242,7 @@ public class TimeMapManager : MonoBehaviour
 
     private void SetupMessagePanel()
     {
-        Transform panel = canvas.transform.Find("Panel_Message");
+        Transform panel = FindUI(canvas.transform, "Panel_Message");
         if (panel == null)
         {
             Debug.LogError("TimeMapManager：场景里没有 Panel_Message");
@@ -210,7 +267,7 @@ public class TimeMapManager : MonoBehaviour
     /// <summary>存档面板：运行时创建 ArchivePanel 组件（Inherit 模式），槽位/拦截层/按钮全部代码生成</summary>
     private void SetupArchivePanel()
     {
-        Transform panel = canvas.transform.Find("Panel_Archive");
+        Transform panel = FindUI(canvas.transform, "Panel_Archive");
         if (panel == null)
         {
             Debug.LogError("TimeMapManager：场景里没有 Panel_Archive");
@@ -274,7 +331,7 @@ public class TimeMapManager : MonoBehaviour
 
     private void BindHomeButton()
     {
-        Transform home = canvas.transform.Find("Btn_Home");
+        Transform home = FindUI(canvas.transform, "Btn_Home");
         if (home == null)
         {
             Debug.LogWarning("TimeMapManager：场景里没有 Btn_Home");
@@ -555,12 +612,34 @@ public class TimeMapManager : MonoBehaviour
         if (mapRoot == null) return;
         if (!locked)
         {
-            float scroll = Input.GetAxis("Mouse ScrollWheel");
-            if (Mathf.Abs(scroll) > 0.0001f && !messageOpen)
+            if (!messageOpen)
             {
-                // 对数滚轮：每格约 ×1.26，缩放范围很大也能轻松遍历（喇叭形的半径跨度大）
-                zoom = Mathf.Clamp(zoom * Mathf.Exp(scroll * 2.3f), data.layout.zoomMin, data.layout.zoomMax);
-                ApplyView();
+                // 缩放：安卓触屏=双指捏合，桌面=滚轮，同一套对数缩放（以原点为中心）
+                if (Input.touchCount == 2)
+                {
+                    Touch t0 = Input.GetTouch(0);
+                    Touch t1 = Input.GetTouch(1);
+                    Vector2 p0 = t0.position - t0.deltaPosition;
+                    Vector2 p1 = t1.position - t1.deltaPosition;
+                    float prev = (p0 - p1).magnitude;
+                    float cur = (t0.position - t1.position).magnitude;
+                    float delta = cur - prev;
+                    if (Mathf.Abs(delta) > 0.5f)
+                    {
+                        zoom = Mathf.Clamp(zoom * Mathf.Exp(delta * 0.008f), data.layout.zoomMin, data.layout.zoomMax);
+                        ApplyView();
+                    }
+                }
+                else
+                {
+                    float scroll = Input.GetAxis("Mouse ScrollWheel");
+                    if (Mathf.Abs(scroll) > 0.0001f)
+                    {
+                        // 对数滚轮：每格约 ×1.26，缩放范围很大也能轻松遍历（喇叭形的半径跨度大）
+                        zoom = Mathf.Clamp(zoom * Mathf.Exp(scroll * 2.3f), data.layout.zoomMin, data.layout.zoomMax);
+                        ApplyView();
+                    }
+                }
             }
             TickAnimation();
         }
@@ -716,6 +795,7 @@ public class TimeMapManager : MonoBehaviour
     public void OnMapPointerDown(PointerEventData e)
     {
         if (locked || messageOpen) return;
+        if (Input.touchCount > 1) return;   // 双指捏合期间不进入单指拖拽
         dragging = true;
     }
 
@@ -727,6 +807,7 @@ public class TimeMapManager : MonoBehaviour
     public void OnMapDrag(PointerEventData e)
     {
         if (!dragging || locked || messageOpen) return;
+        if (Input.touchCount > 1) return;   // 捏合时手指位移不当作平移
         float scale = canvas != null ? canvas.scaleFactor : 1f;
         origin += e.delta / scale;
         ApplyView();
@@ -801,6 +882,8 @@ public class TimeMapManager : MonoBehaviour
             archivePanel.transform.SetAsLastSibling();
             if (archivePanel.blockerGo != null)
             {
+                // 拦截层跟随面板的父级（信箱容器或画布），插到面板正下方，层级才不会错位
+                archivePanel.blockerGo.transform.SetParent(archivePanel.transform.parent, false);
                 archivePanel.blockerGo.transform.SetAsLastSibling();
                 archivePanel.blockerGo.transform.SetSiblingIndex(archivePanel.transform.GetSiblingIndex() - 1);
             }
