@@ -59,5 +59,4 @@ Assets/
 
 ## 说明
 
-- AI 自由对话依赖 DeepSeek API，密钥以混淆形式存放于 `Resources/AIFreeDialogue/AIFreeDialogueConfig.json`（客户端混淆只能防随手抄，无法真正保密）。
 - 本仓库不含 Unity 本地缓存（Library/Temp 等），首次打开项目会自动重建。
