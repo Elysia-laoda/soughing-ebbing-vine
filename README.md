@@ -1,0 +1,63 @@
+# 簌洄之莶（Soughing Ebbing Vine）
+
+时间跳跃 × AI 自由对话的 2D 剧情游戏。基于团结引擎（Unity 2022.3.62t11 内核）开发。
+
+## 游戏简介
+
+世界的时间像一卷胶片，同一时间只存在一条时间轴。男主**苏回**拥有时间跳跃的能力——他的每一次跳跃都会在胶片上裁剪并更换后续内容，被剪掉的世界线从此变成"不存在"。
+
+每条世界线的女主都是同一个灵魂的不同侧面：青梅竹马、孤高冷僻、病弱少女。她们总会被男主吸引，男主也总会试图拯救她们——但所有世界线的终点，都是坏结局。
+
+**没有标准主线。** 时间的每一次跳跃都是新的剧情展开。玩家自主决定剧情长度——在任意世界线选择停留，即可成为结局。
+
+## 核心系统
+
+- **时间跳跃地图**：俯视倒圆锥树式世界线地图。同心圆 = 同一外部时间点的切面，世界线 = 固定角度的辐条；滚轮以原点为中心缩放，拖拽平移，点击节点查看详情并进入剧情。
+- **AI 自由对话**：对话选项留空处可直接输入你想说的话，AI 实时以女主身份回应，并影响好感度（需要联网）。
+- **存档继承**：剧情结局强制存档，进入新剧情时可继承背包 / 体力 / 好感度。
+- **多世界线分支**：三条女主线，结局各不相同。
+
+## 操作说明
+
+| 场景 | 操作 |
+|---|---|
+| 主菜单 | 开始跳跃（进入时间地图）/ 读档 / 音量 / 退出 |
+| 时间地图 | 滚轮缩放 · 拖拽平移 · 点击节点查看详情 · 从新进入 / 从存档进入 |
+| 剧情播放器 | 点击推进剧情 · 右上角菜单（背包 / 存档 / 音量 / 主菜单 / 自动播放） |
+
+## 下载试玩
+
+最新构建产物见 [Releases](../../releases)：
+
+- **Windows 版**：下载 zip 解压后运行 `簌洄之莶.exe`
+- **安卓版**：下载 APK 安装（需允许"安装未知来源应用"）
+
+> 提示：AI 自由对话需要联网；剧情结局会强制存档并回到时间地图。
+
+## 开发
+
+- **引擎**：团结引擎 1.9.3（Unity 2022.3.62t11）
+- **剧本**：`Assets/Resources/StoryData/` 下的 JSON 驱动（`Story1.json` 为教程剧情；条目含 loadType/eventID/scriptID 等字段，`eventID=7` 为结局事件）
+- **世界线地图数据**：`Assets/Resources/StoryData/time_map.json`（节点/世界线/关联线 + 布局参数）
+- **AI 自由对话**：`Assets/Resources/AIFreeDialogue/`（服务参数、密钥混淆串、提示词模板）
+- **场景顺序**：Build Settings = MainMenu → TimeMap → PlotPlayer
+
+### 目录结构
+
+```
+Assets/
+├── Scripts/            # 游戏逻辑（GameManager/UIManager/TimeMapManager/AIFreeDialogue* 等）
+├── Resources/
+│   ├── StoryData/      # 剧本 JSON + 时间地图数据
+│   ├── AIFreeDialogue/ # AI 对话配置与提示词模板
+│   ├── AudioClips/     # 语音/BGM/音效/环境音
+│   ├── Sprites/        # 立绘/背景/UI
+│   └── Fonts/          # 字体
+├── Scenes/             # MainMenu / TimeMap / PlotPlayer
+└── StreamingAssets/    # 开场视频
+```
+
+## 说明
+
+- AI 自由对话依赖 DeepSeek API，密钥以混淆形式存放于 `Resources/AIFreeDialogue/AIFreeDialogueConfig.json`（客户端混淆只能防随手抄，无法真正保密）。
+- 本仓库不含 Unity 本地缓存（Library/Temp 等），首次打开项目会自动重建。
