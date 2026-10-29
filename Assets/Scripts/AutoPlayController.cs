@@ -62,6 +62,7 @@ public class AutoPlayController : MonoBehaviour
         if (ui.empChoiceUIGo.activeSelf) return;           // 选项面板开着：等玩家选
         if (AIDialoguePanel.Instance != null && AIDialoguePanel.Instance.gameObject.activeSelf) return;  // AI自由对话面板开着
         if (ArchivePanel.Instance != null && ArchivePanel.Instance.IsOpen) return;   // 存档面板开着
+        if (DialogueHistoryPanel.Instance != null && DialogueHistoryPanel.Instance.IsOpen) return;   // 对话回顾开着：先看完再推进
         if (Time.time - lastLineShownTime < minHoldSeconds) return;
         if (AudioSourceManager.Instance != null
             && AudioSourceManager.Instance.dialogueAudio != null

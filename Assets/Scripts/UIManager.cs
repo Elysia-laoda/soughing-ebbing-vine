@@ -44,7 +44,16 @@ public class UIManager : MonoBehaviour
     private Coroutine toastCoroutine;   // 计时器句柄，用来"重新计时"
     public GameObject[] functionBtnGos;//菜单按钮管理的功能按钮组(目前只有背包按钮)
     private bool functionBtnsOpen;//功能按钮是否处于展开状态
-
+    // 立绘状态快照用：记录每个立绘槽最近一次用过的资源路径/位置/翻转（下标 0/1 = characterID 0/1）
+    private readonly string[] charSpritePaths = new string[2];
+    private readonly int[] charPosIds = new int[2];
+    private readonly bool[] charRotates = new bool[2];
+    // 立绘刷新过渡：已出现的立绘先淡出到 75%、在最暗处换图、再淡回 100%
+    // （每半程 CharRefreshHalfSeconds = 0.2 秒，一次刷新共 0.4 秒）
+    private readonly Coroutine[] charRefreshRoutines = new Coroutine[2];
+    private const float CharRefreshHalfSeconds = 0.2f;         // 半程时长；一次刷新 = 两程 = 0.4 秒
+    private const float CharRefreshDimAlpha = 0.75f;           // 最暗时保留的不透明度（只淡出 25%）
+    private const float CharRefreshVisibleThreshold = 0.5f;    // 判定"已出现立绘"的门槛，与过渡幅度无关
     private void Awake()
     {
         Instance = this;
@@ -142,8 +151,26 @@ public class UIManager : MonoBehaviour
     }
     public void SetBGImageSprite(string spriteName)
     {
-        //设置背景图片
-        imgBG.sprite = Resources.Load<Sprite>("Sprites/BG/" + spriteName);
+        //设置背景图片（资源区按剧情分目录：Sprites/BG/<剧情>/<图名>，旧结构自动兜底）
+        imgBG.sprite = ResourcePaths.LoadBG(CurrentStory(), spriteName);
+    }
+    /// <summary>当前剧情名（资源按剧情分目录）；没有 GameManager 时返回空串，走旧结构兜底</summary>
+    private static string CurrentStory()
+    {
+        return GameManager.Instance != null ? GameManager.Instance.currentStoryName : "";
+    }
+    /// <summary>
+    /// 按 "角色名/表情" 组合串载入立绘（自动带上当前剧情子目录）。
+    /// 表情里带 @ 时表示跨剧情强引用，例如 "白莶/@Tutorial/normal"。
+    /// </summary>
+    private static Sprite LoadCharacterSprite(string combined)
+    {
+        if (string.IsNullOrEmpty(combined)) return null;
+        int cut = combined.IndexOf('/');
+        if (cut <= 0) return null;
+        string charName = combined.Substring(0, cut);
+        string emotion = combined.Substring(cut + 1);
+        return ResourcePaths.LoadCharacter(CurrentStory(), charName, emotion);
     }
     public void ShowCharacter(string name, int characterID = 0, string emotion = "normal")
     {
@@ -153,17 +180,30 @@ public class UIManager : MonoBehaviour
         talkLineGo.SetActive(false);
         empChoiceUIGo.SetActive(false);
         textName.text = name;
-        if (characterID == 0)
+        int slot = characterID == 0 ? 0 : 1;
+        Image img = characterID == 0 ? imgCharacter : imgCharacter2;
+        if (img == null) return;
+        string spritePath = name + "/" + emotion;
+        string previousPath = charSpritePaths[slot];   // 上一次这一槽用的图
+        charSpritePaths[slot] = spritePath;            // 记进快照，读档时原样还原
+        // 判断这一槽"已出现立绘"还是"未出现立绘"：
+        //   已出现 = 当前可见（不透明度超过门槛）**且这次真的是在换图**（角色或表情变了）。
+        // 同图重复刷新（例如连续两句同表情）不过渡，否则每句台词都要眨一下。
+        // 想让"每次刷新都眨"就去掉 spriteChanged 这个条件。
+        bool spriteChanged = previousPath != spritePath;
+        bool alreadyShown = img.color.a > CharRefreshVisibleThreshold && spriteChanged;
+        img.gameObject.SetActive(true);
+        if (alreadyShown)
         {
-            imgCharacter.sprite = Resources.Load<Sprite>("Sprites/Characters/" + name + "/" + emotion);
-            imgCharacter.gameObject.SetActive(true);
-            FadeInCharacterIfInvisible(imgCharacter);
+            // 已出现：淡出到 75%（只暗 25%）→ 最暗处换图 → 淡回 100%（共 0.4 秒）
+            StartCharRefreshTransition(img, slot, spritePath);
         }
         else
         {
-            imgCharacter2.sprite = Resources.Load<Sprite>("Sprites/Characters/" + name + "/" + emotion);
-            imgCharacter2.gameObject.SetActive(true);
-            FadeInCharacterIfInvisible(imgCharacter);
+            // 未出现（首次出场 / 当前不可见）：不做过场，直接换图 + 补淡入
+            StopCharRefresh(slot);   // 万一上一槽的过渡还在跑（例如正好淡到 50% 时又刷新），先停掉它
+            img.sprite = LoadCharacterSprite(spritePath);
+            FadeInCharacterIfInvisible(img);
         }
     }
     /// <summary>
@@ -176,6 +216,57 @@ public class UIManager : MonoBehaviour
         if (charImage.color.a > 0.01f) return;
         DoShowOrHideUITeen(true, false, 1.5f, charImage.gameObject);
     }
+    /// <summary>
+    /// 立绘刷新过渡：从当前不透明度淡出到 50%，在最暗处换图，再淡回 100%
+    /// （每半程 0.2 秒，一次刷新共 0.4 秒）。只用于"已经在场的立绘"。
+    /// </summary>
+    private void StartCharRefreshTransition(Image img, int slot, string spritePath)
+    {
+        if (slot < 0 || slot >= charRefreshRoutines.Length) return;
+        if (charRefreshRoutines[slot] != null) StopCoroutine(charRefreshRoutines[slot]);   // 同一槽位上一次过渡作废
+        CancelTweenOn(img.gameObject);   // 别和淡入淡出 tween 抢同一个 alpha
+        charRefreshRoutines[slot] = StartCoroutine(CharRefreshRoutine(img, slot, spritePath));
+    }
+    /// <summary>停掉某个立绘槽正在跑的刷新过渡（显隐切换、读档还原、换角色前调用）</summary>
+    private void StopCharRefresh(int slot)
+    {
+        if (slot < 0 || slot >= charRefreshRoutines.Length) return;
+        if (charRefreshRoutines[slot] != null)
+        {
+            StopCoroutine(charRefreshRoutines[slot]);
+            charRefreshRoutines[slot] = null;
+        }
+    }
+    private IEnumerator CharRefreshRoutine(Image img, int slot, string spritePath)
+    {
+        float from = img.color.a;
+        float t = 0f;
+        while (t < CharRefreshHalfSeconds)   // 半程一：淡出到 50%
+        {
+            t += Time.deltaTime;
+            SetCharacterAlpha(img, Mathf.Lerp(from, CharRefreshDimAlpha, t / CharRefreshHalfSeconds));
+            yield return null;
+        }
+        SetCharacterAlpha(img, CharRefreshDimAlpha);// 最暗点：保留 75% 不透明度
+        // 换图藏在这段最暗的位置，看不到硬切
+        Sprite sp = LoadCharacterSprite(spritePath);
+        if (sp != null) img.sprite = sp;
+        t = 0f;
+        while (t < CharRefreshHalfSeconds)   // 半程二：淡回 100%
+        {
+            t += Time.deltaTime;
+            SetCharacterAlpha(img, Mathf.Lerp(CharRefreshDimAlpha, 1f, t / CharRefreshHalfSeconds));
+            yield return null;
+        }
+        SetCharacterAlpha(img, 1f);
+        // 不在这里清 charRefreshRoutines[slot]：可能已经有新的过渡接管了，
+        // 留着旧句柄最多是一次多余的 StopCoroutine（对已结束的协程无副作用）。
+    }
+    private static void SetCharacterAlpha(Image img, float alpha)
+    {
+        Color c = img.color;
+        img.color = new Color(c.r, c.g, c.b, Mathf.Clamp01(alpha));
+    }
     public void UpdateTalkLineText(string name, string dialogueContent)
     {
         talkLineGo.SetActive(true);
@@ -186,10 +277,14 @@ public class UIManager : MonoBehaviour
         //更新对话框文本
         textName.text = name;
         textTalkLine.text = dialogueContent;
+        DialogueHistoryPanel.Record(name, dialogueContent);   // 记进"对话回顾"（只记实际播出去的）
     }
     public void SetCharacetrPos(int posID, bool ifRotate = false, int characterID = 0)
     {
         if (posID == 0) return;
+        int slot = characterID == 0 ? 0 : 1;
+        charPosIds[slot] = posID;      // 记进快照
+        charRotates[slot] = ifRotate;
         if (characterID == 0)
         {
             SetPos(posID, imgCharacter, ifRotate);
@@ -251,6 +346,7 @@ public class UIManager : MonoBehaviour
     }
     public void ShowOrHideCharacter(bool show, int characterID)
     {
+        StopCharRefresh(characterID == 0 ? 0 : 1);   // 显隐由 tween 接管，先停掉刷新过渡
         Image characterImage = characterID == 0 ? imgCharacter : imgCharacter2;
         DoShowOrHideUITeen(show, true, 1.5f, characterImage.gameObject);
     }
@@ -473,6 +569,67 @@ public class UIManager : MonoBehaviour
             if (imageTweenList[i].go == go) imageTweenList.RemoveAt(i);
         }
     }
+    /// <summary>存档：导出立绘状态快照（下标 0/1 = characterID 0/1），供读档原样还原</summary>
+    public List<CharacterSnapshot> GetCharacterSnapshots()
+    {
+        List<CharacterSnapshot> list = new List<CharacterSnapshot>();
+        for (int i = 0; i < 2; i++)
+        {
+            Image img = i == 0 ? imgCharacter : imgCharacter2;
+            list.Add(new CharacterSnapshot
+            {
+                shown = img != null && img.gameObject.activeSelf && img.color.a > 0.01f,
+                spritePath = charSpritePaths[i],
+                posId = charPosIds[i],
+                rotate = charRotates[i]
+            });
+        }
+        return list;
+    }
+    /// <summary>
+    /// 读档：按快照还原立绘（显隐/图/位置/翻转），直接给终值、不播动画。
+    /// 这样即使读档落在"男主或旁白说话"的句子上（那一句不会调用 ShowCharacter），女主立绘也还在。
+    /// </summary>
+    public void ApplyCharacterSnapshots(List<CharacterSnapshot> snaps)
+    {
+        if (snaps == null) return;
+        StopCharRefresh(0);   // 读档直接给终值，不要和刷新过渡打架
+        StopCharRefresh(1);
+        for (int i = 0; i < 2 && i < snaps.Count; i++)
+        {
+            CharacterSnapshot s = snaps[i];
+            if (s == null) continue;
+            Image img = i == 0 ? imgCharacter : imgCharacter2;
+            if (img == null) continue;
+            if (!s.shown || string.IsNullOrEmpty(s.spritePath))
+            {
+                // 存档时这个槽没显示：还原成透明 + 关闭（与场景初始状态一致）
+                Color c0 = img.color;
+                img.color = new Color(c0.r, c0.g, c0.b, 0f);
+                img.gameObject.SetActive(false);
+                continue;
+            }
+            Sprite sp = LoadCharacterSprite(s.spritePath);
+            if (sp == null)
+            {
+                Debug.LogWarning("读档还原立绘失败，找不到 " + s.spritePath + "（剧情=" + CurrentStory() + "）");
+                continue;
+            }
+            img.sprite = sp;
+            Color c = img.color;
+            img.color = new Color(c.r, c.g, c.b, 1f);
+            img.gameObject.SetActive(true);
+            charSpritePaths[i] = s.spritePath;
+            charPosIds[i] = s.posId;
+            charRotates[i] = s.rotate;
+            if (s.posId > 0 && characterPosTrans != null && s.posId - 1 < characterPosTrans.Length
+                && characterPosTrans[s.posId - 1] != null)
+            {
+                img.transform.localPosition = characterPosTrans[s.posId - 1].localPosition;
+            }
+            img.transform.eulerAngles = s.rotate ? new Vector3(0f, 180f, 0f) : Vector3.zero;
+        }
+    }
     public void ToggleFunctionBtns()
     {
         //切换功能按钮组(背包等)的整体显示与隐藏,挂在 Btn_Menu 的 onClick 上
@@ -500,6 +657,10 @@ public class UIManager : MonoBehaviour
             if (VolumeSettingsPanel.Instance != null)
             {
                 VolumeSettingsPanel.Instance.Hide();
+            }
+            if (DialogueHistoryPanel.Instance != null)
+            {
+                DialogueHistoryPanel.Instance.Hide();
             }
         }
     }

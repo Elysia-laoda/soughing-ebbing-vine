@@ -101,7 +101,9 @@ public static class AIFreeDialogueFlow
         slot.dialogueContent = replyText;
         // 表情：AI 给了就用 AI 的（已过白名单校验）；没给就保留剧本里的默认表情（如 wearsad）当兜底
         if (!string.IsNullOrEmpty(replyEmotion)) slot.emotion = replyEmotion;
-        slot.favorability = Mathf.Clamp(favorDelta, 0, Mathf.Max(1, cfg.favorabilityMaxDelta));
+        // 好感度增量可正可负（负 = 这次回应让她失望），幅度上限 favorabilityMaxDelta
+        int maxDelta = Mathf.Max(1, cfg.favorabilityMaxDelta);
+        slot.favorability = Mathf.Clamp(favorDelta, -maxDelta, maxDelta);
         slot.soundType = 0;
         slot.soundPath = "";
 
@@ -219,6 +221,7 @@ public static class AIFreeDialogueFlow
         if (s >= 0 && e > s) json = raw.Substring(s, e - s + 1);
 
         List<string> texts = new List<string>();
+        int maxDelta = Mathf.Max(1, AIFreeDialogueConfig.Data.favorabilityMaxDelta);
         foreach (Match m in Regex.Matches(json, @"\{[^{}]*\}"))
         {
             string obj = m.Value;
@@ -227,15 +230,17 @@ public static class AIFreeDialogueFlow
             string t = Unescape(tm.Groups[1].Value).Trim();
             if (t.Length == 0) continue;
             texts.Add(t.Length > 200 ? t.Substring(0, 200) : t);
-            Match fm = Regex.Match(obj, "\"favorability\"\\s*:\\s*(-?\\d+)");
-            if (fm.Success && int.TryParse(fm.Groups[1].Value, out int f))
+            // 好感度：容忍小数与带引号（模型偶尔输出 0.5 / "3"，旧正则会把 0.5 截成 0 → 看起来"偏小"）
+            Match fm = Regex.Match(obj, "\"favorability\"\\s*:\\s*\"?(-?\\d+(?:\\.\\d+)?)\"?");
+            if (fm.Success && float.TryParse(fm.Groups[1].Value, System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out float fRaw))
             {
-                favor += Mathf.Clamp(f, 0, Mathf.Max(1, AIFreeDialogueConfig.Data.favorabilityMaxDelta));
+                favor += Mathf.Clamp(Mathf.RoundToInt(fRaw), -maxDelta, maxDelta);
             }
             if (string.IsNullOrEmpty(emotion))
             {
-                Match em = Regex.Match(obj, "\"emotion\"\\s*:\\s*\"([^\"]*)\"");
-                if (em.Success) emotion = em.Groups[1].Value.Trim();
+                Match em = Regex.Match(obj, "\"emotion\"\\s*:\\s*\"?([A-Za-z]*)\"?");
+                if (em.Success) emotion = em.Groups[1].Value.Trim().ToLowerInvariant();   // 大小写/引号容错
             }
             if (texts.Count >= 2) break;
         }
@@ -251,18 +256,24 @@ public static class AIFreeDialogueFlow
             return;
         }
         text = string.Join("\n", texts);
-        favor = Mathf.Clamp(favor, 0, Mathf.Max(1, AIFreeDialogueConfig.Data.favorabilityMaxDelta));
-
-        // 表情白名单校验：AI 给的表情不在女主表情库里则退回 normal（保证立绘一定加载得出）
+        favor = Mathf.Clamp(favor, -maxDelta, maxDelta);
+        // 表情白名单校验：AI 给的表情不在女主表情库里则退回配置的 fallbackEmotion
+        // （默认 wearnormal —— 本段她穿的是 wear 那套，退回 normal 会换错装扮）
         if (!string.IsNullOrEmpty(emotion)
             && AIFreeDialogueConfig.Data.emotionList != null
             && !AIFreeDialogueConfig.Data.emotionList.Contains(emotion))
         {
-            Debug.LogWarning("AI 输出了表情库外表情: " + emotion + "，已退回 normal");
-            emotion = "normal";
+            string fb = FallbackEmotion();
+            Debug.LogWarning("AI 输出了表情库外表情: " + emotion + "，已退回 " + fb);
+            emotion = fb;
         }
     }
-
+    /// <summary>表情白名单校验失败时的回退表情（读配置 fallbackEmotion，缺省 wearnormal）</summary>
+    private static string FallbackEmotion()
+    {
+        string fb = AIFreeDialogueConfig.Data.fallbackEmotion;
+        return string.IsNullOrEmpty(fb) ? "wearnormal" : fb;
+    }
     private static string Unescape(string s)
     {
         return s.Replace("\\n", "\n").Replace("\\\"", "\"").Replace("\\\\", "\\");

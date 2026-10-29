@@ -10,7 +10,7 @@ using UnityEngine;
 /// </summary>
 public static class SaveSystem
 {
-    public const string DEFAULT_STORY_NAME = "Story1";  // 新游戏默认剧情文件名（不含扩展名）
+    public const string DEFAULT_STORY_NAME = "Tutorial";  // 新游戏默认剧情文件名（不含扩展名；原 Story1 已改名）
     public const int SLOT_COUNT = 4;                    // 存档槽数量
     public static SaveInfo pendingLoad;                 // 主菜单→剧情场景的读档数据，用完即清
 
@@ -80,6 +80,15 @@ public class SaveInfo
     public int eneryValue;              // 当前体力值（沿用 GameManager.eneryValue 的拼写）
     public List<FavorSaveData> favorability;  // 好感度快照（Dictionary 无法直接序列化，转 List 存）
     public List<ItemSaveData> items;    // 背包快照（物品 id + 数量）
+    public List<CharacterSnapshot> characters;  // 立绘快照（下标 0/1 = characterID 0/1；旧档为 null
+}
+[Serializable]
+public class CharacterSnapshot
+{
+    public bool shown;          // 存档时这个立绘槽是否显示中
+    public string spritePath;   // 资源相对路径 <角色名>/<表情>（对应 Sprites/Characters/ 下）
+    public int posId;           // 位置 1=左 2=右 3=中（0=这条线上没设过）
+    public bool rotate;         // 是否水平翻转
 }
 [Serializable]
 public class ItemSaveData

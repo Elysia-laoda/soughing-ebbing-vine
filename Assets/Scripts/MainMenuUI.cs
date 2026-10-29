@@ -13,6 +13,7 @@ public class MainMenuUI : MonoBehaviour
 
     private void Awake()
     {
+        ArchivePanel.ResetCrossSceneState();   // 主菜单入口：清掉上一个场景遗留的强制存档/继承目标
         btnNewGame.onClick.RemoveAllListeners();
         btnNewGame.onClick.AddListener(() =>
         {

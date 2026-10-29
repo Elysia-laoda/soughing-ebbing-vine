@@ -24,7 +24,7 @@ public class TimeMapManager : MonoBehaviour
 {
     public static TimeMapManager Instance { get; private set; }
     /// <summary>背景图 Resources 路径（不含扩展名），运行时加载挂到最底层，避免场景精灵引用在构建中失效</summary>
-    public string backgroundSpritePath = "Sprites/BG/MapBG";
+    public string backgroundSpritePath = "Sprites/BG/Universal/MapBG";   // 2026-10-18：与剧情无关的散图归到 Sprites/BG/Universal/
 
     // ============ 数据 ============
     private TimeMapData data;
@@ -71,6 +71,9 @@ public class TimeMapManager : MonoBehaviour
 
     private void Start()
     {
+        // 时间地图场景入口先复位跨场景静态量：面板本体是运行时挂在未激活的 Panel_Archive 上，
+        // 它的 Awake 要等面板第一次打开才跑，不能用来复位（否则会清掉刚写入的继承目标）
+        ArchivePanel.ResetCrossSceneState();
         font = Resources.Load<Font>("Fonts/楷体_GB2312");
         if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
         spriteCircle = Sprite.Create(MakeCircleTexture(128), new Rect(0, 0, 128, 128), new Vector2(0.5f, 0.5f), 100f);
@@ -434,9 +437,19 @@ public class TimeMapManager : MonoBehaviour
         }
 
         // 1) 同心圆装饰（每层时间点一个圆环，UI/Ring shader 画固定像素宽的线）
+        //    这里必须真能拿到 shader：只用 Shader.Find 引用的 shader 会被打包剔除，
+        //    拿到 null 时 Image 退回默认 UI 材质 —— 一圈一个大方块，34 圈叠起来就是把
+        //    整屏洗成"淡黄色"(0.75,0.70,0.62)，背景全被盖住（构建版实测就是这个现象）。
+        //    所以：优先从 Resources 加载；拿不到就整体跳过圆环装饰，绝不留下色块。
         Color ringColor = new Color(0.75f, 0.70f, 0.62f, 0.75f);
         float canvasScale = canvas != null ? canvas.scaleFactor : 1f;
-        for (int t = 1; t <= maxTimePoint; t++)
+        Shader ringShader = ResolveRingShader();
+        if (ringShader == null)
+        {
+            Debug.LogError("UI/Ring shader 不可用：已跳过全部同心圆装饰（否则会变成整屏色块盖住背景）。"
+                + "修法：把 UI_Ring.shader 放进 Assets/Resources/Shaders/，或在 Project Settings → Graphics → Always Included Shaders 里加入 UI/Ring");
+        }
+        for (int t = 1; ringShader != null && t <= maxTimePoint; t++)
         {
             float radius = RadiusFor(t);
             GameObject go = new GameObject("Circle_" + t);
@@ -444,7 +457,7 @@ public class TimeMapManager : MonoBehaviour
             Image img = go.AddComponent<Image>();
             img.sprite = spriteWhite;
             img.raycastTarget = false;   // 纯装饰：不挡点击
-            img.material = CreateRingMaterial(radius, canvasScale, 3f);
+            img.material = CreateRingMaterial(ringShader, radius, canvasScale, 3f);
             img.color = ringColor;
             RectTransform rt = go.GetComponent<RectTransform>();
             rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 0.5f);
@@ -486,17 +499,24 @@ public class TimeMapManager : MonoBehaviour
         }
         nodeViews.AddRange(all);
     }
+    /// <summary>
+    /// 取 UI/Ring shader。优先 Resources 加载——Resources 里的资产必定进构建；
+    /// 只靠 Shader.Find 引用的 shader 会被打包剔除，构建里必然返回 null（这就是时间地图
+    /// 背景在打包版被整屏色块盖住的根因）。再退回 Shader.Find，兼容编辑器与
+    /// 已把该 shader 加进 Always Included Shaders 的工程。
+    /// </summary>
+    private static Shader ResolveRingShader()
+    {
+        Shader sh = Resources.Load<Shader>("Shaders/UI_Ring");
+        if (sh == null) sh = Shader.Find("UI/Ring");
+        return sh;
+    }
     /// <summary>创建一条圆环用的材质：线宽为固定像素（随 Image 拉伸不改变粗细）</summary>
-    private Material CreateRingMaterial(float radius, float canvasScale, float thicknessPx)
+    private Material CreateRingMaterial(Shader sh, float radius, float canvasScale, float thicknessPx)
     {
         if (ringMatTemplate == null)
         {
-            Shader sh = Shader.Find("UI/Ring");
-            if (sh == null)
-            {
-                Debug.LogWarning("找不到 UI/Ring shader，同心圆将不显示（检查 Assets/Shaders/UI_Ring.shader）");
-                return null;
-            }
+            if (sh == null) return null;   // 调用方已确保非 null；这里只做兜底
             ringMatTemplate = new Material(sh);
         }
         Material m = new Material(ringMatTemplate);
@@ -593,12 +613,17 @@ public class TimeMapManager : MonoBehaviour
         NodeView captured = view;
         btn.onClick.AddListener(() => OnNodeClicked(captured));
 
-        Text label = MakeText(rt, "Label", nd.title, 18, new Color(0.94f, 0.92f, 0.88f), TextAnchor.UpperCenter);
+        // 节点名：字号比原来大一档 + 深色描边，自转/缩小时压在圆环与连线上也看得清
+        Text label = MakeText(rt, "Label", nd.title, 22, new Color(0.96f, 0.94f, 0.90f), TextAnchor.UpperCenter);
+        Outline labelOutline = label.gameObject.AddComponent<Outline>();
+        labelOutline.effectColor = new Color(0f, 0f, 0f, 0.85f);
+        labelOutline.effectDistance = new Vector2(1.5f, -1.5f);
+        labelOutline.useGraphicAlpha = true;
         RectTransform lrt = label.GetComponent<RectTransform>();
         lrt.anchorMin = lrt.anchorMax = new Vector2(0.5f, 0f);
         lrt.pivot = new Vector2(0.5f, 0f);
         lrt.anchoredPosition = new Vector2(0, 4);
-        lrt.sizeDelta = new Vector2(140, 40);
+        lrt.sizeDelta = new Vector2(180, 52);
         label.raycastTarget = false;
 
         view.rt = rt;

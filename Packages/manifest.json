@@ -1,7 +1,6 @@
 {
   "dependencies": {
     "cn.tuanjie.ai.generators": "file:../.codely-cli/extensions/TJGenerators/Packages/cn.tuanjie.ai.generators",
-    "cn.tuanjie.codely.bridge": "1.0.74",
     "cn.unity.uos.launcher": "https://cnb.cool/unity/uos/UOSLauncher.git",
     "com.unity.2d.sprite": "1.0.0",
     "com.unity.collab-proxy": "2.12.4",
@@ -40,6 +39,7 @@
     "com.unity.modules.video": "1.0.0",
     "com.unity.modules.vr": "1.0.0",
     "com.unity.modules.wind": "1.0.0",
-    "com.unity.modules.xr": "1.0.0"
+    "com.unity.modules.xr": "1.0.0",
+    "cn.tuanjie.codely.bridge": "1.0.80"
   }
 }

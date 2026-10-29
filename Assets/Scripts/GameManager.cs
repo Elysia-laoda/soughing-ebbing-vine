@@ -29,16 +29,32 @@ public class GameManager : MonoBehaviour
     private void Awake()
     {
         Instance = this;
+        ArchivePanel.ResetCrossSceneState();   // 剧情场景入口：清掉上一个场景遗留的强制存档/继承目标
+        DialogueHistoryPanel.ClearLog();       // 对话回顾只记当前这一场：新开局/读档都从零开始记
         // 读档：用存档里的剧情文件名与索引；新游戏：默认剧情从第 0 句开始
         // pendingLoad 先存到 loadSave，Start 里的环境/背包/数值恢复还要用，用完即清
         loadSave = SaveSystem.pendingLoad;
         SaveSystem.ClearPendingLoad();
         string storyName = loadSave != null ? loadSave.storyName : SaveSystem.DEFAULT_STORY_NAME;
         int startIndex = loadSave != null ? loadSave.scriptIndex : 0;
-        UnityEngine.TextAsset jsonFile = Resources.Load<UnityEngine.TextAsset>("StoryData/" + storyName); if (jsonFile == null)
+        // 存档里文件名可能是空的（历史坏档 / 写入方漏填）：回退默认剧情，绝不让整场景白屏
+        if (string.IsNullOrEmpty(storyName))
         {
-            Debug.LogError("找不到剧情数据文件,请确认 Assets/Resources/StoryData/" + storyName + ".json 文件存在"); return;
+            Debug.LogWarning("存档里没有剧情文件名(storyName 为空)，已回退到默认剧情 " + SaveSystem.DEFAULT_STORY_NAME);
+            storyName = SaveSystem.DEFAULT_STORY_NAME;
         }
+        UnityEngine.TextAsset jsonFile = Resources.Load<UnityEngine.TextAsset>("StoryData/" + storyName);
+        if (jsonFile == null)
+        {
+            Debug.LogError("找不到剧情数据文件,请确认 Assets/Resources/StoryData/" + storyName + ".json 文件存在");
+            // 再兜一层：指定剧情不存在时退到默认剧情，避免"白屏 + 整个场景不工作"
+            if (storyName != SaveSystem.DEFAULT_STORY_NAME)
+            {
+                storyName = SaveSystem.DEFAULT_STORY_NAME;
+                jsonFile = Resources.Load<UnityEngine.TextAsset>("StoryData/" + storyName);
+            }
+        }
+        if (jsonFile == null) return;
         ScriptDataList dataList = JsonUtility.FromJson<ScriptDataList>(jsonFile.text);
         scriptDatas = dataList.scriptDatas;
         currentStoryName = storyName;
@@ -48,7 +64,7 @@ public class GameManager : MonoBehaviour
         favorabilityDict = new Dictionary<string, int>()
         {
             { "Player",0 },
-            { "白蔹", 50 }
+            { "白莶", 50 }
         };
         eventDict = new Dictionary<int, Action<object>>()
         {
@@ -67,6 +83,12 @@ public class GameManager : MonoBehaviour
         {
             // 读档：先恢复"画面+声音"环境（背景/BGM/环境音/遮罩淡出），再恢复背包与数值
             RestoreLoadedEnvironment(loadSave);
+            // 立绘快照：存档时连"当前显示的立绘（图/位置/翻转/显隐）"一起存了，这里原样还原。
+            // 不还原的话，读档落在"男主或旁白说话"的句子上就不会调用 ShowCharacter → 女主立绘消失。
+            if (loadSave.characters != null)
+            {
+                UIManager.Instance.ApplyCharacterSnapshots(loadSave.characters);
+            }
             if (loadSave.items != null)
             {
                 // 新格式存档：按快照精确恢复背包、体力、好感度
@@ -97,8 +119,9 @@ public class GameManager : MonoBehaviour
         Canvas sceneCanvas = FindObjectOfType<Canvas>(true);
         if (sceneCanvas != null)
         {
+            // 首次操作提示延后到进入场景 13 秒（原 3 秒 + 10 秒）：先让玩家看一眼开场再弹
             HintPanel.ShowIfFirstTime(sceneCanvas.transform, "Img_Tip", "HintShown_PlotPlayer",
-                "按下右上角按钮，以显示或隐藏其余左侧副按钮。\n左侧副按钮从上到下依次是背包、存档、声音、主菜单和自动播放。", 3f);
+                "按下右上角按钮，以显示或隐藏其余左侧副按钮。\n左侧副按钮从上到下依次是背包、存档、声音、主菜单、自动播放和对话回顾。", 13f);
         }
         HandleData();
     }
@@ -167,7 +190,8 @@ public class GameManager : MonoBehaviour
             surroundingName = currentSurroundingName,
             eneryValue = eneryValue,
             favorability = new List<FavorSaveData>(),
-            items = UIManager.Instance.GetBagSnapshot()
+            items = UIManager.Instance.GetBagSnapshot(),
+            characters = UIManager.Instance.GetCharacterSnapshots()
         };
         foreach (KeyValuePair<string, int> kv in favorabilityDict)
         {
@@ -263,8 +287,9 @@ public class GameManager : MonoBehaviour
         switch (soundType)
         {
             case 1:
-                AudioSourceManager.Instance.PlayDialogue(data.name + "/" + data.soundPath);
-                break;
+                // 语音也按剧情分目录：AudioClips/Dialogue/<角色>/<剧情>/<序号>
+                AudioSourceManager.Instance.PlayDialogue(
+                    ResourcePaths.DialogueAudioPath(currentStoryName, data.name, data.soundPath)); break;
             case 2:
                 AudioSourceManager.Instance.PlaySound(data.soundPath);
                 break;
@@ -417,16 +442,23 @@ public class GameManager : MonoBehaviour
     /// </summary>
     private void PreloadResources()
     {
-        // 只预加载视频后面 40 条剧情（覆盖整个雨夜开场），不把整本剧本资源都装进内存
+        // 只预加载视频后面 10 条剧情（覆盖整个雨夜开场），不把整本剧本资源都装进内存
         int maxCount = Mathf.Min(scriptIndex + 1 + 10, scriptDatas.Count);
         for (int i = scriptIndex + 1; i < maxCount; i++)
         {
             ScriptData sd = scriptDatas[i];
+            // 背景与音频必须**各自独立**判断：早期写成 if / else if，
+            // 于是"同一条既换背景又放音乐"时只预加载了背景，音乐被跳过——
+            // 开场的雨雨雨.mp3(7.4MB)、雨声.mp3(11.6MB) 从来没被预加载过，
+            // 视频一结束就在主线程同步加载，于是接正片时卡零点几秒。
             if (sd.loadType == 1 && !string.IsNullOrEmpty(sd.spriteName))
             {
+                // 新结构在剧情子目录，旧结构在根目录：两条都发一次异步请求，
+                // 不存在的那条不会真的加载（成本为零），保证哪种结构都能预热到。
+                Resources.LoadAsync<Sprite>(ResourcePaths.BGSpritePath(currentStoryName, sd.spriteName));
                 Resources.LoadAsync<Sprite>("Sprites/BG/" + sd.spriteName);
             }
-            else if (sd.soundType == 2 && !string.IsNullOrEmpty(sd.soundPath))
+            if (sd.soundType == 2 && !string.IsNullOrEmpty(sd.soundPath))
             {
                 Resources.LoadAsync<AudioClip>("AudioClips/Sound/" + sd.soundPath);
             }

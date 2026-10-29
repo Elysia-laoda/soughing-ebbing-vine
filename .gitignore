@@ -45,3 +45,20 @@ desktop.ini
 .codelyignore
 .com-unity-codely.json
 .vsconfig
+
+# ===== 仓库只含框架：美术 / 音频 / 视频 / 剧情 / 字体 / 密钥 一律不进 git（本地保留即可）=====
+/Assets/Resources/Sprites/
+/Assets/Resources/Sprites.meta
+/Assets/Resources/AudioClips/
+/Assets/Resources/AudioClips.meta
+/Assets/Resources/StoryData/
+/Assets/Resources/StoryData.meta
+/Assets/Resources/AIFreeDialogue/
+/Assets/Resources/AIFreeDialogue.meta
+/Assets/Resources/Fonts/
+/Assets/Resources/Fonts.meta
+/Assets/StreamingAssets/
+/Assets/StreamingAssets.meta
+/Assets/UOSLauncherEncrypt/
+/Assets/UOSLauncherEncrypt.meta
+/_assets-origin/

@@ -29,7 +29,7 @@ public class AIDialoguePanel : MonoBehaviour
     private UnityWebRequest currentRequest;// 当前请求（取消时 Abort）
     private string pendingLine;            // 当前请求的台词（失败重试时复用）
     private Coroutine loadingAnim;         // 加载动画协程句柄
-    private string heroineName = "白蔹";    // 女主名（来自配置，构建 UI 时赋值）
+    private string heroineName = "白莶";    // 女主名（来自配置，构建 UI 时赋值）
 
     public static AIDialoguePanel EnsureInstance()
     {

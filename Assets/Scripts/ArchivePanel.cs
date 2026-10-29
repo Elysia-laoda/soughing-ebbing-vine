@@ -46,13 +46,24 @@ public class ArchivePanel : MonoBehaviour
 
     private void Awake()
     {
-        // 跨场景静态状态一律在 Awake 复位：上次会话遗留的强制存档/继承目标
-        // 会导致面板关不掉、按钮点了没反应（表现为"卡死"）
+        Instance = this;
+        EnsureBound();   // 场景里挂载的面板：字段已就绪，直接绑定
+        // 跨场景静态量不在这里复位：TimeMap 场景的面板是运行时挂在"初始未激活"的
+        // Panel_Archive 上，Awake 会被推迟到面板第一次被打开那一刻——而那一刻
+        // TimeMapManager 刚写完 PendingStoryFile，一复位就把继承目标清空，于是读档
+        // 进 PlotPlayer 时 storyName 为空 → 整个场景白屏。复位改由三个场景的入口脚本
+        // （GameManager / MainMenuUI / TimeMapManager 的 Awake/Start）调 ResetCrossSceneState()。
+    }
+    /// <summary>
+    /// 复位跨场景静态状态（遗留的强制存档/继承目标会导致面板关不掉、按钮点了没反应，
+    /// 表现为"卡死"）。由场景入口脚本在进入场景时调用一次；**不要**放进 Awake，
+    /// 原因见 Awake 注释（TimeMap 的面板 Awake 会晚到"面板第一次打开"时）。
+    /// </summary>
+    public static void ResetCrossSceneState()
+    {
         ForceSaveAndExit = false;
         PendingStoryFile = null;
         PendingRequiredItemId = 0;
-        Instance = this;
-        EnsureBound();   // 场景里挂载的面板：字段已就绪，直接绑定
     }
     /// <summary>
     /// 按钮绑定（惰性 + 幂等）：字段就绪才绑；force=true 时强制重绑。
@@ -375,6 +386,17 @@ public class ArchivePanel : MonoBehaviour
         }
         else if (mode == ArchiveMode.Inherit)
         {
+            if (string.IsNullOrEmpty(PendingStoryFile))
+            {
+                // 目标剧情文件名丢了就绝不进场景：否则 GameManager 找不到剧情文件 → 白屏
+                Debug.LogError("ArchivePanel: 继承进入缺少目标剧情文件名（PendingStoryFile 为空），已取消进入", this);
+                HidePopup();
+                if (TimeMapManager.Instance != null)
+                {
+                    TimeMapManager.Instance.ShowMessage("继承目标剧情缺失，无法进入（请重开一次地图再试）");
+                }
+                return;
+            }
             SaveInfo info = SaveSystem.LoadSlot(currentSlotId);
             if (info == null)
             {

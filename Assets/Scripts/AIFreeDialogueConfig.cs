@@ -118,12 +118,13 @@ public class AIConfigData
     public int requestTimeoutSeconds = 60;            // 请求超时（秒）
     public int maxStoryChars = 20000;                 // 发给 AI 的剧本全文上限，超出时保留最新段
     public string playerName = "苏回";                // 男主名，玩家台词会以他的身份播一条剧情
-    public string heroineName = "白蔹";               // AI 扮演的女主名（剧本里的落地句必须是这个名字）
+    public string heroineName = "白莶";               // AI 扮演的女主名（剧本里的落地句必须是这个名字）
     public string aiOptionPrefix = "@AI";             // 选项文本以该前缀开头也算自由对话入口（落地句文本留空同样算）
     public int favorabilityInitial = 50;              // 女主初始好感度（存档里没有该角色时用这个值兜底）
-    public int favorabilityMaxDelta = 10;             // AI 单次回复可带来的好感度变化上限（钳制 0~该值）
+    public int favorabilityMaxDelta = 10;             // AI 单次回复的好感度变化幅度上限（钳制 -该值~+该值，负数=好感度下降）
     public int energyCost = 10;                       // 每次成功自由对话消耗的体力
     public List<string> emotionList;                  // 女主表情库白名单（对应 Sprites/Characters/<女主名>/ 下的表情图）
+    public string fallbackEmotion = "wearnormal";     // 表情白名单校验失败时的回退表情（必须在 emotionList 里）
     public string apiKeyObfuscated = "";              // 密钥混淆串（明文 XOR 0x5A 后 Base64），见 Obfuscate()
 }
 

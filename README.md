@@ -49,27 +49,30 @@
 
 | 版本 | 日期 | 内容 |
 |---|---|---|
+| v0.2.0 | 2026-10-29 | 内容与体验：新增《原点·齐线根源》剧情（第一人称、三套服装立绘 13 张、全程配音 124 句、专属场景 14 张），时间地图「原点」节点开放（缩放到最大可见）；新增对话回顾（backlog）面板，可随时回看已播台词；立绘换表情加入 0.4 秒淡出过渡（只暗 25%，仅在真的换图时触发）；序章补齐结局事件（通关强制存档并回到时间地图），移除打点小游戏；首次操作提示延后到 13 秒。AI 自由对话：提示词规则强化（9 档表情白名单 + 好感度按强度分级），白名单回退表情改为 wearnormal 且可在配置里改，回复解析容错（小数 / 引号 / 大小写）。修复：读档白屏（跨场景静态量被延迟 Awake 清空）、继承进入空目标守卫、存档补立绘快照、构建版时间地图整屏纯色（UI/Ring shader 被剔除）、视频结束接正片卡顿（预加载逻辑缺陷）、女主名统一「白莶」、资源按剧情分目录 |
 | v0.1.1 | 2026-08-29 | 修复与适配：新增 16:9 信箱模式（安卓全面屏不再拉伸）；修复宽屏手机开场视频变形；时间地图背景资源化（打包后不再丢失）；时间地图支持触屏双指缩放与单指拖拽；其他稳定性修复 |
 | v0.1.0 | 2026-08-29 | 首个试玩版：完整教程主线剧情 + 时间跳跃地图 + AI 自由对话 + 存档继承 + 全局自动播放 |
 
 ## 开发
 
 - **引擎**：团结引擎 1.9.3（Unity 2022.3.62t11）
-- **剧本**：`Assets/Resources/StoryData/` 下的 JSON 驱动（`Story1.json` 为教程剧情；条目含 loadType/eventID/scriptID 等字段，`eventID=7` 为结局事件）
+- **剧本**：`Assets/Resources/StoryData/` 下的 JSON 驱动（`Tutorial.json` 为教程剧情、`Origin.json` 为原点剧情；条目含 loadType/eventID/scriptID 等字段，`eventID=7` 为结局事件）
 - **世界线地图数据**：`Assets/Resources/StoryData/time_map.json`（节点/世界线/关联线 + 布局参数）
 - **AI 自由对话**：`Assets/Resources/AIFreeDialogue/`（服务参数、密钥混淆串、提示词模板）
+- **资源定位**：立绘/背景/语音按剧情分目录（`Sprites/BG/<剧情>/`、`Sprites/Characters/<角色>/<剧情>/`、`AudioClips/Dialogue/<角色>/<剧情>/`），统一由 `Assets/Scripts/ResourcePaths.cs` 解析；找不到时回退到 `Sprites/BG/Universal/` 与旧根目录；`emotion` 写 `@<剧情>/<表情>` 可跨剧情引用立绘
 - **场景顺序**：Build Settings = MainMenu → TimeMap → PlotPlayer
 
 ### 目录结构
 
 ```
 Assets/
-├── Scripts/            # 游戏逻辑（GameManager/UIManager/TimeMapManager/AIFreeDialogue* 等）
+├── Scripts/            # 游戏逻辑（GameManager/UIManager/TimeMapManager/AIFreeDialogue*/ResourcePaths/DialogueHistoryPanel 等）
 ├── Resources/
-│   ├── StoryData/      # 剧本 JSON + 时间地图数据
-│   ├── AIFreeDialogue/ # AI 对话配置与提示词模板
-│   ├── AudioClips/     # 语音/BGM/音效/环境音
-│   ├── Sprites/        # 立绘/背景/UI
+│   ├── StoryData/      # 剧本 JSON（Tutorial / Origin）+ 时间地图数据
+│   ├── AIFreeDialogue/ # AI 对话配置与提示词模板（含密钥，不随仓库分发）
+│   ├── AudioClips/     # 语音/BGM/音效/环境音（Dialogue/<角色>/<剧情>/ 分目录）
+│   ├── Sprites/        # 立绘/背景/UI（BG/<剧情>/、Characters/<角色>/<剧情>/）
+│   ├── Shaders/        # UI_Ring 等运行时 shader
 │   └── Fonts/          # 字体
 ├── Scenes/             # MainMenu / TimeMap / PlotPlayer
 └── StreamingAssets/    # 开场视频
@@ -87,4 +90,5 @@ Assets/
 ## 说明
 
 - 本仓库不含 Unity 本地缓存（Library/Temp 等），首次打开项目会自动重建。
-- AI 自由对话依赖 DeepSeek API，密钥以混淆形式存放于 `Resources/AIFreeDialogue/AIFreeDialogueConfig.json`，仅供个人试玩用途。
+- **本仓库只包含框架**（代码 / 场景 / 工程设置 / shader / UI 预制体）：立绘、背景、语音、BGM、开场视频、剧本 JSON、字体与 API 密钥均已从仓库及历史中移除。clone 后需自行放入 `Assets/Resources/`（结构见上）；缺资源时游戏可启动，但对应画面、语音为空。
+- AI 自由对话依赖 DeepSeek API：密钥不再随仓库分发，请自行创建 `Assets/Resources/AIFreeDialogue/AIFreeDialogueConfig.json` 并按 `AIFreeDialogueConfig.cs` 的字段填写（`apiKey` 等）。
